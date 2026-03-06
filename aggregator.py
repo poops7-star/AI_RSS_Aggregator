@@ -24,9 +24,9 @@ def clean_html(raw_html):
     return BeautifulSoup(raw_html, "html.parser").get_text(separator=" ", strip=True)
 
 def get_embedding(text):
-    # Используем оптимизированную модель Google для эмбеддингов
+    # Используем максимально прямое имя модели без лишних префиксов
     result = genai.embed_content(
-        model="models/text-embedding-001",
+        model="embedding-001",
         content=text,
         task_type="retrieval_document"
     )
