@@ -26,7 +26,7 @@ def clean_html(raw_html):
 def get_embedding(text):
     # Используем максимально прямое имя модели без лишних префиксов
     result = genai.embed_content(
-        model="embedding-001",
+        model="models/text-embedding-004",
         content=text,
         task_type="retrieval_document"
     )
