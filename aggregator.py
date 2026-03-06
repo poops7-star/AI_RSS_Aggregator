@@ -26,7 +26,7 @@ def clean_html(raw_html):
 def get_embedding(text):
     # Используем оптимизированную модель Google для эмбеддингов
     result = genai.embed_content(
-        model="models/text-embedding-004",
+        model="models/text-embedding-001",
         content=text,
         task_type="retrieval_document"
     )
