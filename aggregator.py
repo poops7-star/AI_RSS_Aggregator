@@ -13,7 +13,13 @@ co = cohere.Client(os.environ.get("COHERE_API_KEY"))
 
 FEEDS = [
     "https://techcrunch.com/feed/",
-    "https://www.artificialintelligence-news.com/feed/"
+    "https://www.ynet.co.il/Integration/StoryRss1854.xml",
+    "http://www.habrahabr.ru/rss",
+    "https://news.google.com/rss/search?q=%D0%A2%D0%B5%D1%85%D0%BD%D0%BE%D0%BB%D0%BE%D0%B3%D0%B8%D0%B8&hl=ru&gl=US&ceid=US:ru",
+    "https://news.google.com/rss/search?q=%D0%98%D1%81%D0%BA%D1%83%D1%81%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9+%D0%B8%D0%BD%D1%82%D0%B5%D0%BB%D0%BB%D0%B5%D0%BA%D1%82+OR+%D0%9D%D0%B5%D0%B9%D1%80%D0%BE%D1%81%D0%B5%D1%82%D0%B8&hl=ru&gl=US&ceid=US:ru",
+    "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNREpxYW5RU0FuSjFHZ0pTVlNnQVAB?hl=ru&gl=RU&ceid=RU:ru.",
+    "https://news.google.com/rss/topics/CAAqKggKIiRDQkFTRlFvSUwyMHZNREpxYW5RU0JXVnVMVWRDR2dKSlRDZ0FQAQ?hl=en-IL&gl=IL&ceid=IL%3Aen",
+    "http://www.kinopoisk.ru/news.rss"
 ]
 
 def clean_html(raw_html):
