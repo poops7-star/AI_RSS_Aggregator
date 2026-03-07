@@ -24,8 +24,7 @@ def init_clients():
 
 supabase = init_clients()
 
-# Условный ID пользователя (можно заменить на реальную систему авторизации)
-USER_ID = int(os.environ.get("USER_ID", 1))
+# Устаревший глобальный ID удален, используем st.session_state.user_id
 
 def fetch_articles(search_query=""):
     """
@@ -46,17 +45,19 @@ def fetch_articles(search_query=""):
             return response.data
         else:
             # Получение interest_embedding пользователя (первого попавшегося для MVP)
-            user_profile = supabase.table("user_profile").select("interest_embedding").limit(1).execute()
+            user_profile = supabase.table("user_profile").select("id, interest_embedding").limit(1).execute()
             
             user_vector = None
             if user_profile.data:
+                st.session_state.user_id = user_profile.data[0].get("id")
                 user_vector = user_profile.data[0].get("interest_embedding")
             else:
                 # Холодный старт: таблица пуста. Генерируем вектор нулей размерностью 1024
                 zero_vector = [0.0] * 1024
                 try:
-                    new_profile = supabase.table("user_profile").insert({"interest_embedding": zero_vector}).execute()
+                    new_profile = supabase.table("user_profile").insert({"interest_embedding": zero_vector}).execute() # Возможно нужно будет возвращать представление для id, но insert по умолчанию возвращает вставленную строку со всеми полями
                     if new_profile.data:
+                        st.session_state.user_id = new_profile.data[0].get("id")
                         user_vector = new_profile.data[0].get("interest_embedding")
                         st.success("Создан базовый профиль пользователя!")
                 except Exception as e:
@@ -85,9 +86,14 @@ def handle_interaction(article_id):
     """
     Вызывает RPC handle_article_interaction для сохранения взаимодействия пользователя.
     """
+    user_id = st.session_state.get("user_id")
+    if not user_id:
+        st.error("Ошибка: ID пользователя не найден. Подождите окончания загрузки ленты.")
+        return
+        
     try:
         response = supabase.rpc("handle_article_interaction", {
-            "p_user_id": USER_ID,
+            "p_user_id": user_id,
             "p_article_id": article_id,
             "p_interaction_type": "interested"
         }).execute()
