@@ -1,5 +1,6 @@
 import os
 import feedparser
+from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 import cohere
 from supabase import create_client, Client
@@ -37,8 +38,28 @@ def get_embedding(text):
     )
     return response.embeddings[0]
 
+def cleanup_old_articles():
+    """Удаляет статьи, опубликованные более 4 дней назад."""
+    try:
+        print("--- Очистка старых данных ---")
+        # Вычисляем дату(timestamp), которая была 4 дня назад
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=4)).isoformat()
+        
+        # Запрашиваем удаление всех записей, где created_at < cutoff_date
+        # Предполагается, что в таблице 'articles' есть колонка с датой создания, например 'created_at'
+        response = supabase.table('articles').delete().lt('created_at', cutoff_date).execute()
+        
+        deleted_count = len(response.data) if response.data else 0
+        print(f"Удалено старых статей (старше 4 дней): {deleted_count}")
+        
+    except Exception as e:
+        print(f"Ошибка при удалении старых данных: {e}")
+
 def process_feeds():
     print("--- Запуск с Cohere ---")
+    
+    # 1. Очистка старых статей перед сбором новых
+    cleanup_old_articles()
     for url in FEEDS:
         print(f"Парсинг: {url}")
         feed = feedparser.parse(url)
