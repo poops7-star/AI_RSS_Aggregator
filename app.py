@@ -25,7 +25,7 @@ def init_clients():
 supabase = init_clients()
 
 # Условный ID пользователя (можно заменить на реальную систему авторизации)
-USER_ID = os.environ.get("USER_ID", "default_user_123")
+USER_ID = int(os.environ.get("USER_ID", 1))
 
 def fetch_articles(search_query=""):
     """
@@ -45,13 +45,26 @@ def fetch_articles(search_query=""):
             }).execute()
             return response.data
         else:
-            # Получение персонализированной ленты по пользователю
-            # Если RPC не принимает user_id, вы можете изменить ключи здесь.
-            response = supabase.rpc("match_articles", {
-                "user_id": USER_ID
-            }).execute()
-            return response.data
+            # Получение interest_embedding пользователя (для MVP id=1)
+            user_profile = supabase.table("user_profile").select("interest_embedding").eq("id", 1).execute()
             
+            user_vector = None
+            if user_profile.data:
+                user_vector = user_profile.data[0].get("interest_embedding")
+
+            if user_vector:
+                # Получение персонализированной ленты по вектору интересов пользователя
+                response = supabase.rpc("match_articles", {
+                    "query_embedding": user_vector,
+                    "match_threshold": 0.05,
+                    "match_count": 15
+                }).execute()
+                return response.data
+            else:
+                # Фолбэк, если профиль не найден или у него нет вектора
+                st.warning("Вектор интересов пользователя не найден. Показываем последние новости.")
+                res = supabase.table("articles").select("*").order("id", desc=True).limit(20).execute()
+                return res.data
     except Exception as e:
         st.warning(f"Подсказка: возможно, параметры вашей RPC `match_articles` отличаются. Оригинальная ошибка: {e}")
         # Фолбэк: если RPC не отработал, просто загружаем последние новости
