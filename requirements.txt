@@ -2,3 +2,4 @@ streamlit
 supabase
 cohere>=5.0.0
 pydantic>=2.7.0
+feedparser
