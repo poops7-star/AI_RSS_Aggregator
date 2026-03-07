@@ -51,6 +51,16 @@ def fetch_articles(search_query=""):
             user_vector = None
             if user_profile.data:
                 user_vector = user_profile.data[0].get("interest_embedding")
+            else:
+                # Холодный старт: таблица пуста. Генерируем вектор нулей размерностью 1024
+                zero_vector = [0.0] * 1024
+                try:
+                    new_profile = supabase.table("user_profile").insert({"interest_embedding": zero_vector}).execute()
+                    if new_profile.data:
+                        user_vector = new_profile.data[0].get("interest_embedding")
+                        st.success("Создан базовый профиль пользователя!")
+                except Exception as e:
+                    st.error(f"Не удалось инициализировать профиль: {e}")
 
             if user_vector:
                 # Получение персонализированной ленты по вектору интересов пользователя
