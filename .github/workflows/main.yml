@@ -2,7 +2,7 @@ name: AI RSS Aggregator Engine
 
 on:
   schedule:
-    - cron: '0 */1 * * *' # Запуск каждые 1 час
+    - cron: '0 */1 * * *' # Запуск каждый час
   workflow_dispatch:      # Кнопка для ручного запуска
 
 jobs:
