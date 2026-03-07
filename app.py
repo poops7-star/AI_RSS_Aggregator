@@ -45,8 +45,8 @@ def fetch_articles(search_query=""):
             }).execute()
             return response.data
         else:
-            # Получение interest_embedding пользователя (для MVP id=1)
-            user_profile = supabase.table("user_profile").select("interest_embedding").eq("id", 1).execute()
+            # Получение interest_embedding пользователя (первого попавшегося для MVP)
+            user_profile = supabase.table("user_profile").select("interest_embedding").limit(1).execute()
             
             user_vector = None
             if user_profile.data:
