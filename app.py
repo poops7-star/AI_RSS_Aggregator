@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import cohere
 from supabase import create_client, Client
 
 # Настройка страницы
@@ -21,12 +20,9 @@ def init_clients():
         
     client: Client = create_client(supabase_url, supabase_key)
     
-    cohere_key = os.environ.get("COHERE_API_KEY", "")
-    co_client = cohere.Client(cohere_key) if cohere_key else None
-    
-    return client, co_client
+    return client
 
-supabase, co = init_clients()
+supabase = init_clients()
 
 # Условный ID пользователя (можно заменить на реальную систему авторизации)
 USER_ID = os.environ.get("USER_ID", "default_user_123")
@@ -38,18 +34,12 @@ def fetch_articles(search_query=""):
     или user_id для рекомендаций.
     """
     try:
-        if search_query and co:
-            # Если есть запрос - делаем семантический поиск, генерируем эмбеддинг
-            emb_res = co.embed(
-                texts=[search_query], 
-                model='embed-english-v3.0', 
-                input_type='search_query'
-            )
-            embedding = emb_res.embeddings[0]
-            
-            # Предположительное название аргументов для семантического поиска
+        if search_query:
+            # Note: semantic search from the frontend requires passing the query string directly
+            # to the RPC if it supports it, or doing the embedding generation elsewhere.
+            # Assuming the RPC might handle the query directly or we fallback to user recommendations
             response = supabase.rpc("match_articles", {
-                "query_embedding": embedding,
+                "query": search_query, # changed to query instead of embedding
                 "match_threshold": 0.1,
                 "match_count": 20
             }).execute()

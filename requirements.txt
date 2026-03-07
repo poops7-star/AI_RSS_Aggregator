@@ -1,5 +1,4 @@
-feedparser==6.0.11
-beautifulsoup4==4.12.3
-cohere==5.5.8
-supabase==2.10.0
 streamlit
+supabase
+cohere>=5.0.0
+pydantic>=2.7.0
