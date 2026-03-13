@@ -8,6 +8,10 @@ st.set_page_config(page_title="AI RSS Dashboard", page_icon="📰", layout="wide
 st.title("📰 AI RSS Dashboard")
 st.markdown("Your smart news feed, sorted by relevance.")
 
+# --- Session State: Pagination ---
+if "feed_limit" not in st.session_state:
+    st.session_state.feed_limit = 15
+
 # Инициализация клиентов
 @st.cache_resource
 def init_clients():
@@ -45,15 +49,15 @@ with st.sidebar:
 def fetch_articles(search_query=""):
     """
     Получает статьи с использованием RPC match_articles.
-    В зависимости от реализации RPC в БД, может принимать embedding для поиска
-    или user_id для рекомендаций.
+    Uses dynamic st.session_state.feed_limit for pagination.
     """
+    limit = st.session_state.feed_limit
     try:
         if search_query:
             response = supabase.rpc("match_articles", {
                 "query": search_query,
                 "match_threshold": 0.1,
-                "match_count": 20
+                "match_count": limit
             }).execute()
             return response.data
         else:
@@ -81,47 +85,70 @@ def fetch_articles(search_query=""):
                 response = supabase.rpc("match_articles", {
                     "query_embedding": user_vector,
                     "match_threshold": 0.05,
-                    "match_count": 15
+                    "match_count": limit
                 }).execute()
                 return response.data
             else:
                 # Фолбэк, если профиль не найден или у него нет вектора
                 st.warning("User interest vector not found. Showing latest news.")
-                res = supabase.table("articles").select("*").order("id", desc=True).limit(20).execute()
+                res = supabase.table("articles").select("*").order("id", desc=True).limit(limit).execute()
                 return res.data
     except Exception as e:
         st.warning(f"Hint: your `match_articles` RPC parameters might differ. Original error: {e}")
-        # Фолбэк: если RPC не отработал, просто загружаем последние новости
-        res = supabase.table("articles").select("*").order("id", desc=True).limit(20).execute()
+        res = supabase.table("articles").select("*").order("id", desc=True).limit(limit).execute()
         return res.data
 
 
 def fetch_latest_articles():
     """
-    Получает последние 30 статей напрямую из таблицы articles,
+    Получает последние статьи напрямую из таблицы articles,
     отсортированных по дате публикации (по убыванию).
-    Игнорирует вектор пользователя — чистый хронологический фид.
+    Uses dynamic st.session_state.feed_limit for pagination.
     """
+    limit = st.session_state.feed_limit
     try:
         res = supabase.table("articles").select("*").order(
             "published_at", desc=True
-        ).limit(30).execute()
-        # Если published_at отсутствует или пуст, фолбэк на created_at
+        ).limit(limit).execute()
         if not res.data:
             res = supabase.table("articles").select("*").order(
                 "created_at", desc=True
-            ).limit(30).execute()
+            ).limit(limit).execute()
         return res.data
     except Exception:
-        # Фолбэк на created_at если колонки published_at нет
         try:
             res = supabase.table("articles").select("*").order(
                 "created_at", desc=True
-            ).limit(30).execute()
+            ).limit(limit).execute()
             return res.data
         except Exception as e:
             st.error(f"Failed to load latest articles: {e}")
             return []
+
+
+def fetch_saved_articles():
+    """
+    Получает сохранённые пользователем статьи из таблицы saved_articles,
+    с join на таблицу articles для получения полных данных.
+    """
+    user_id = st.session_state.get("user_id")
+    if not user_id:
+        return []
+    try:
+        res = supabase.table("saved_articles").select(
+            "article_id, articles(*)"
+        ).eq("user_id", user_id).execute()
+        # Извлекаем вложенные данные articles из результата join
+        articles = []
+        if res.data:
+            for row in res.data:
+                article_data = row.get("articles")
+                if article_data:
+                    articles.append(article_data)
+        return articles
+    except Exception as e:
+        st.error(f"Failed to load saved articles: {e}")
+        return []
 
 
 def handle_interaction(article_id):
@@ -144,8 +171,37 @@ def handle_interaction(article_id):
         st.error(f"Error saving interaction: {e}")
 
 
-def render_article_card(article, show_interaction_button=True):
-    """Рендерит карточку статьи. show_interaction_button=False для вкладки Latest News."""
+def save_article(article_id):
+    """
+    Сохраняет статью в закладки пользователя (таблица saved_articles).
+    Игнорирует ошибку уникального ограничения при повторном сохранении.
+    """
+    user_id = st.session_state.get("user_id")
+    if not user_id:
+        st.error("Error: User ID not found. Please wait for the feed to load.")
+        return
+
+    try:
+        supabase.table("saved_articles").insert({
+            "user_id": user_id,
+            "article_id": article_id
+        }).execute()
+        st.toast("💾 Article saved to bookmarks!")
+    except Exception as e:
+        error_msg = str(e)
+        if "duplicate" in error_msg.lower() or "unique" in error_msg.lower() or "23505" in error_msg:
+            st.toast("📌 Article already saved.")
+        else:
+            st.error(f"Error saving article: {e}")
+
+
+def render_article_card(article, show_interaction_button=True, show_save_button=True, card_prefix=""):
+    """
+    Рендерит карточку статьи.
+    show_interaction_button: показывать кнопку 👍 (For You)
+    show_save_button: показывать кнопку 💾 (For You + Latest News, но не Saved)
+    card_prefix: префикс для уникальности ключей кнопок между вкладками
+    """
     with st.container(border=True):
         title = article.get("title", "Untitled")
         summary = article.get("summary", "")
@@ -159,15 +215,37 @@ def render_article_card(article, show_interaction_button=True):
         if summary:
             st.write(summary)
         
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            if show_interaction_button:
-                if st.button("👍 Read / Relevant", key=f"btn_{article_id}"):
+        # Определяем колонки в зависимости от видимых кнопок
+        if show_interaction_button and show_save_button:
+            col1, col2, col3 = st.columns([1, 1, 3])
+        elif show_interaction_button or show_save_button:
+            col1, col3 = st.columns([1, 4])
+            col2 = None
+        else:
+            col1, col3 = None, None
+
+        if show_interaction_button and col1:
+            with col1:
+                if st.button("👍 Read / Relevant", key=f"{card_prefix}btn_{article_id}"):
                     if article_id:
                         handle_interaction(article_id)
                     else:
                         st.error("Missing article ID")
-        with col2:
+        
+        if show_save_button:
+            save_col = col2 if col2 else col1
+            if save_col:
+                with save_col:
+                    if st.button("💾 Save", key=f"{card_prefix}save_{article_id}"):
+                        if article_id:
+                            save_article(article_id)
+                        else:
+                            st.error("Missing article ID")
+        
+        if col3:
+            with col3:
+                st.markdown(f"**[Read at source]({link})**")
+        elif not show_interaction_button and not show_save_button:
             st.markdown(f"**[Read at source]({link})**")
 
 
@@ -179,8 +257,8 @@ query = st.text_input("Enter a topic for semantic search (leave empty for your f
 
 st.divider()
 
-# Вкладки: For You / Latest News
-tab_for_you, tab_latest = st.tabs(["🎯 For You", "🕐 Latest News"])
+# Вкладки: For You / Latest News / Saved
+tab_for_you, tab_latest, tab_saved = st.tabs(["🎯 For You", "🕐 Latest News", "📌 Saved"])
 
 with tab_for_you:
     with st.spinner("Loading recommendations..."):
@@ -190,7 +268,12 @@ with tab_for_you:
         st.info("No recommendations available or search yielded no results.")
     else:
         for article in articles:
-            render_article_card(article, show_interaction_button=True)
+            render_article_card(article, show_interaction_button=True, show_save_button=True, card_prefix="fy_")
+        
+        # Load More button at the bottom of the feed
+        if st.button("🔄 Load More", key="load_more_for_you"):
+            st.session_state.feed_limit += 15
+            st.rerun()
 
 with tab_latest:
     with st.spinner("Loading latest news..."):
@@ -200,4 +283,19 @@ with tab_latest:
         st.info("No recent articles found.")
     else:
         for article in latest:
-            render_article_card(article, show_interaction_button=False)
+            render_article_card(article, show_interaction_button=False, show_save_button=True, card_prefix="lt_")
+        
+        # Load More button at the bottom of the feed
+        if st.button("🔄 Load More", key="load_more_latest"):
+            st.session_state.feed_limit += 15
+            st.rerun()
+
+with tab_saved:
+    with st.spinner("Loading saved articles..."):
+        saved = fetch_saved_articles()
+    
+    if not saved:
+        st.info("No saved articles yet. Use the 💾 Save button to bookmark articles.")
+    else:
+        for article in saved:
+            render_article_card(article, show_interaction_button=False, show_save_button=False, card_prefix="sv_")
