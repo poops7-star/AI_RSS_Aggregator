@@ -24,7 +24,23 @@ def init_clients():
 
 supabase = init_clients()
 
-# Устаревший глобальный ID удален, используем st.session_state.user_id
+# --- Sidebar: Reset Profile ---
+with st.sidebar:
+    st.header("⚙️ Settings")
+    if st.button("🔄 Reset Profile / Clear Interests"):
+        user_id = st.session_state.get("user_id")
+        if user_id:
+            try:
+                zero_vector = [0.0] * 1024
+                supabase.table("user_profile").update(
+                    {"interest_embedding": zero_vector}
+                ).eq("id", user_id).execute()
+                st.toast("✅ Profile reset! Your recommendations will now be neutral.")
+            except Exception as e:
+                st.error(f"Failed to reset profile: {e}")
+        else:
+            st.warning("User profile not loaded yet. Please wait for the feed to load first.")
+
 
 def fetch_articles(search_query=""):
     """
@@ -34,11 +50,8 @@ def fetch_articles(search_query=""):
     """
     try:
         if search_query:
-            # Note: semantic search from the frontend requires passing the query string directly
-            # to the RPC if it supports it, or doing the embedding generation elsewhere.
-            # Assuming the RPC might handle the query directly or we fallback to user recommendations
             response = supabase.rpc("match_articles", {
-                "query": search_query, # changed to query instead of embedding
+                "query": search_query,
                 "match_threshold": 0.1,
                 "match_count": 20
             }).execute()
@@ -55,7 +68,7 @@ def fetch_articles(search_query=""):
                 # Холодный старт: таблица пуста. Генерируем вектор нулей размерностью 1024
                 zero_vector = [0.0] * 1024
                 try:
-                    new_profile = supabase.table("user_profile").insert({"interest_embedding": zero_vector}).execute() # Возможно нужно будет возвращать представление для id, но insert по умолчанию возвращает вставленную строку со всеми полями
+                    new_profile = supabase.table("user_profile").insert({"interest_embedding": zero_vector}).execute()
                     if new_profile.data:
                         st.session_state.user_id = new_profile.data[0].get("id")
                         user_vector = new_profile.data[0].get("interest_embedding")
@@ -82,6 +95,35 @@ def fetch_articles(search_query=""):
         res = supabase.table("articles").select("*").order("id", desc=True).limit(20).execute()
         return res.data
 
+
+def fetch_latest_articles():
+    """
+    Получает последние 30 статей напрямую из таблицы articles,
+    отсортированных по дате публикации (по убыванию).
+    Игнорирует вектор пользователя — чистый хронологический фид.
+    """
+    try:
+        res = supabase.table("articles").select("*").order(
+            "published_at", desc=True
+        ).limit(30).execute()
+        # Если published_at отсутствует или пуст, фолбэк на created_at
+        if not res.data:
+            res = supabase.table("articles").select("*").order(
+                "created_at", desc=True
+            ).limit(30).execute()
+        return res.data
+    except Exception:
+        # Фолбэк на created_at если колонки published_at нет
+        try:
+            res = supabase.table("articles").select("*").order(
+                "created_at", desc=True
+            ).limit(30).execute()
+            return res.data
+        except Exception as e:
+            st.error(f"Failed to load latest articles: {e}")
+            return []
+
+
 def handle_interaction(article_id):
     """
     Вызывает RPC handle_article_interaction для сохранения взаимодействия пользователя.
@@ -101,40 +143,61 @@ def handle_interaction(article_id):
     except Exception as e:
         st.error(f"Error saving interaction: {e}")
 
-# --- UI Дашборда ---
 
-# Поле для семантического поиска (опционально поверх рекомендационной ленты)
-st.subheader("News Search")
-query = st.text_input("Enter a topic for semantic search (leave empty for your feed):", "")
+def render_article_card(article, show_interaction_button=True):
+    """Рендерит карточку статьи. show_interaction_button=False для вкладки Latest News."""
+    with st.container(border=True):
+        title = article.get("title", "Untitled")
+        summary = article.get("summary", "")
+        link = article.get("link", "#")
+        article_id = article.get("id", None)
+        published = article.get("published_at") or article.get("created_at", "")
 
-st.divider()
-
-with st.spinner("Loading news..."):
-    articles = fetch_articles(query)
-
-if not articles:
-    st.info("No news available or search yielded no results.")
-else:
-    # Рендер ленты
-    for article in articles:
-        # Для карточек используем container(border=True) 
-        with st.container(border=True):
-            title = article.get("title", "Untitled")
-            summary = article.get("summary", "")
-            link = article.get("link", "#")
-            article_id = article.get("id", None)
-            
-            st.subheader(title)
-            if summary:
-                st.write(summary)
-            
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                # Кнопка интереса/прочтения
+        st.subheader(title)
+        if published:
+            st.caption(f"📅 {published}")
+        if summary:
+            st.write(summary)
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if show_interaction_button:
                 if st.button("👍 Read / Relevant", key=f"btn_{article_id}"):
                     if article_id:
                         handle_interaction(article_id)
                     else:
                         st.error("Missing article ID")
-            with col2:
-                st.markdown(f"**[Read at source]({link})**")
+        with col2:
+            st.markdown(f"**[Read at source]({link})**")
+
+
+# --- UI Дашборда ---
+
+# Поле для семантического поиска
+st.subheader("News Search")
+query = st.text_input("Enter a topic for semantic search (leave empty for your feed):", "")
+
+st.divider()
+
+# Вкладки: For You / Latest News
+tab_for_you, tab_latest = st.tabs(["🎯 For You", "🕐 Latest News"])
+
+with tab_for_you:
+    with st.spinner("Loading recommendations..."):
+        articles = fetch_articles(query)
+    
+    if not articles:
+        st.info("No recommendations available or search yielded no results.")
+    else:
+        for article in articles:
+            render_article_card(article, show_interaction_button=True)
+
+with tab_latest:
+    with st.spinner("Loading latest news..."):
+        latest = fetch_latest_articles()
+    
+    if not latest:
+        st.info("No recent articles found.")
+    else:
+        for article in latest:
+            render_article_card(article, show_interaction_button=False)
