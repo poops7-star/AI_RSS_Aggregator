@@ -24,5 +24,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }} # ВОТ ЭТА СТРОЧКА БЫЛА ПРОПУЩЕНА
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python aggregator.py
